@@ -1,0 +1,1 @@
+"""Pinterest downloader desktop application."""
