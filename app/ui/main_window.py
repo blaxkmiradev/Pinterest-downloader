@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PyQt5.QtCore import Qt, QThread, QUrl
+from PyQt5.QtCore import Qt, QThread, QTimer, QUrl
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtGui import QBrush, QCloseEvent, QColor, QDesktopServices, QPixmap
@@ -43,12 +43,14 @@ class MainWindow(QMainWindow):
         self.row_states: dict[int, str] = {}
         self.current_urls: list[str] = []
         self._preview_pixmap = QPixmap()
+        self._current_preview_path: str = ""
         self.media_player = QMediaPlayer(self)
         self.media_player.error.connect(self._handle_preview_player_error)
 
         self._build_ui()
         self.media_player.setVideoOutput(self.video_widget)
         self.media_player.stateChanged.connect(self._on_player_state_changed)
+        self.media_player.mediaStatusChanged.connect(self._on_player_media_status_changed)
         self._set_default_output_directory()
         self._refresh_stats()
 
@@ -84,7 +86,7 @@ class MainWindow(QMainWindow):
         )
         hero_subtitle.setObjectName("heroSubtitle")
         hero_subtitle.setWordWrap(True)
-        hero_meta = QLabel("Open Source Release by K-SEC • rikixz.com")
+        hero_meta = QLabel("Open Source Release by K-SEC - rikixz.com")
         hero_meta.setObjectName("heroMeta")
 
         hero_layout.addWidget(hero_title)
@@ -446,9 +448,13 @@ class MainWindow(QMainWindow):
 
         self._refresh_stats()
 
-        if status == "Downloaded" and self.result_table.currentRow() < 0:
-            self.result_table.selectRow(row)
-            if saved_path:
+        if status == "Downloaded":
+            current_row = self.result_table.currentRow()
+            if current_row < 0:
+                self.result_table.selectRow(row)
+                if saved_path:
+                    self._load_preview(saved_path, media_type)
+            elif current_row == row and saved_path:
                 self._load_preview(saved_path, media_type)
 
     def _handle_progress_update(self, current: int, total: int) -> None:
@@ -531,32 +537,50 @@ class MainWindow(QMainWindow):
         self._load_image_preview(saved_path)
 
     def _load_image_preview(self, image_path: str) -> None:
+        path = Path(image_path)
+        if not path.exists():
+            self._set_preview_message("Preview file was not found on disk.")
+            return
+
         self._stop_video_preview(clear_media=True)
-        pixmap = QPixmap(image_path)
+        pixmap = QPixmap(str(path))
         if pixmap.isNull():
             self._set_preview_message("Preview not available for this image.")
             return
 
+        self._current_preview_path = str(path)
         self._preview_pixmap = pixmap
         self.preview_stack.setCurrentWidget(self.preview_image_label)
         self._render_preview()
+        QTimer.singleShot(0, self._render_preview)
 
     def _load_video_preview(self, video_path: str) -> None:
+        path = Path(video_path)
+        if not path.exists():
+            self._set_preview_message("Preview file was not found on disk.")
+            return
+
         self._preview_pixmap = QPixmap()
         self.preview_stack.setCurrentWidget(self.video_widget)
         self.play_pause_button.setVisible(True)
         self.stop_video_button.setVisible(True)
 
-        media = QMediaContent(QUrl.fromLocalFile(str(Path(video_path).resolve())))
+        self._current_preview_path = str(path)
+        media = QMediaContent(QUrl.fromLocalFile(str(path.resolve())))
         self.media_player.setMedia(media)
-        self.media_player.play()
-        self.play_pause_button.setText("Pause")
+        self.play_pause_button.setText("Play")
+        QTimer.singleShot(0, self.media_player.play)
 
     def _render_preview(self) -> None:
         if self._preview_pixmap.isNull():
             return
 
         target_size = self.preview_image_label.size()
+        if target_size.width() < 2 or target_size.height() < 2:
+            target_size = self.preview_stack.size()
+        if target_size.width() < 2 or target_size.height() < 2:
+            return
+
         scaled = self._preview_pixmap.scaled(
             target_size,
             Qt.KeepAspectRatio,
@@ -568,6 +592,7 @@ class MainWindow(QMainWindow):
     def _set_preview_message(self, text: str) -> None:
         self._stop_video_preview(clear_media=True)
         self._preview_pixmap = QPixmap()
+        self._current_preview_path = ""
         self.preview_image_label.setPixmap(QPixmap())
         self.preview_image_label.setText("")
         self.preview_message_label.setText(text)
@@ -599,10 +624,19 @@ class MainWindow(QMainWindow):
         else:
             self.play_pause_button.setText("Play")
 
+    def _on_player_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status == QMediaPlayer.InvalidMedia:
+            self._set_preview_message(
+                "Video preview is not supported by this system codec setup. "
+                "Use Open Folder to play the file externally."
+            )
+
     def _handle_preview_player_error(self, error: int) -> None:
         if error == QMediaPlayer.NoError:
             return
-        self._set_preview_message("Video preview failed. You can still open the saved file.")
+        self._set_preview_message(
+            "Video preview failed. Use Open Folder to play the saved file externally."
+        )
 
     def _make_item(self, text: str) -> QTableWidgetItem:
         item = QTableWidgetItem(text)

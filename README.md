@@ -4,7 +4,7 @@ A polished desktop app built with PyQt5 to download high-quality images and vide
 Open-source release by **K-SEC**: https://rikixz.com
 
 ## Screenshot
-![PinFrame Downloader UI](Screenshot.png)
+![PinFrame Downloader UI](Screenshot.jpg)
 
 ## Features
 - Modern multi-panel UI with gradient styling.
@@ -65,6 +65,19 @@ python run.py
 
 ## License
 MIT (see `LICENSE`).
+
+### Permissions
+- Commercial use
+- Modification
+- Distribution
+- Private use
+
+### Limitations
+- Liability
+- Warranty
+
+### Conditions
+- License and copyright notice
 
 ## Note
 Only download content you have rights to use.
